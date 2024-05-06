@@ -29,6 +29,7 @@ const run = async () => {
     await client.connect();
 
     const jobsCollection = client.db('jobify').collection('jobs');
+    const companiesCollection = client.db('jobify').collection('companies');
 
     app.get('/jobs',async (req,res) => {
         const result = await jobsCollection.find().toArray();
@@ -40,9 +41,25 @@ const run = async () => {
         if (title.length < 3) {
             return res.status(400).send("Title must have at least 3 characters");
         }
-        const query = { title: { $regex: title, $options: 'i' } };
+        const query = { job_title: { $regex: title, $options: 'i' } };
         const result = await jobsCollection.find(query).toArray();
         res.send(result)
+    })
+
+    app.get('/job/:id',async(req,res)=>{
+      const id = req.params.id;
+      console.log(id)
+      const filter = {_id : new ObjectId(id)};
+      const result = await jobsCollection.findOne(filter)
+      res.send(result)
+    })
+
+    app.get('/company',async(req,res)=>{
+      const {name} = req.query;
+      console.log(name)
+      const query = {company_name: name}
+      const result = await companiesCollection.findOne(query);
+      res.send(result)
     })
 
     await client.db("admin").command({ ping: 1 });
