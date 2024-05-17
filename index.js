@@ -55,7 +55,14 @@ const run = async () => {
     const appliedJobsCollection = client.db("jobify").collection("appliedJobs");
 
     app.get("/jobs", async (req, res) => {
-      const result = await jobsCollection.find().toArray();
+      let query = {};
+      if (req.query.related && req.query.id) {
+        query = {
+          category: req.query.related,
+          _id: { $ne: new ObjectId(req.query.id) },
+        };
+      }
+      const result = await jobsCollection.find(query).toArray();
       res.send(result);
     });
 
@@ -141,13 +148,13 @@ const run = async () => {
       res.send(result);
     });
     //will keep this
-    app.get('/login/:email',async(req,res)=>{
+    app.get("/login/:email", async (req, res) => {
       const email = req.params.email;
-      const query = {email: email}
+      const query = { email: email };
       const result = await usersCollection.findOne(query);
-      const {role} = result;
-      res.send({role: role})
-    })
+      const { role } = result;
+      res.send({ role: role });
+    });
 
     // Clear token on logout
     app.get("/logout", (req, res) => {
