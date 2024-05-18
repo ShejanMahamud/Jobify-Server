@@ -53,6 +53,7 @@ const run = async () => {
     const companiesCollection = client.db("jobify").collection("companies");
     const usersCollection = client.db("jobify").collection("users");
     const appliedJobsCollection = client.db("jobify").collection("appliedJobs");
+    const bookmarkJobsCollection = client.db("jobify").collection("bookmarkJobs");
 
     app.get("/jobs", async (req, res) => {
       let query = {};
@@ -115,6 +116,30 @@ const run = async () => {
       const result = await jobsCollection.find(query).toArray();
       res.send(result);
     });
+
+    app.get('/applied_jobs',async(req,res)=>{
+      let query = {};
+      if(req.query.email){
+        query = {candidate_email: req.query.email}
+      }
+      const appliedJobs = await appliedJobsCollection.find(query).toArray();
+      const jobIds = appliedJobs.map(job => job.jobId)
+      const jobDetails = await jobsCollection.find({ _id: { $in: jobIds.map(id => new ObjectId(id)) } }).toArray();
+      const appliedJobsWithDetails = appliedJobs.map(appliedJob => {
+        const jobDetail = jobDetails.find(job => job._id.toString() === appliedJob.jobId);
+        return { ...appliedJob, jobDetail };
+      });
+      res.send(appliedJobsWithDetails)
+    })
+
+    app.get('/bookmark_jobs',async(req,res)=>{
+      let query = {};
+      if(req.query.email){
+        query = {candidate_email: req.query.email}
+      }
+      const result = await bookmarkJobsCollection.find(query).toArray();
+      res.send(result)
+    })
 
     app.get("/companies", async (req, res) => {
       const page = parseInt(req.query?.page) - 1;
@@ -202,6 +227,40 @@ const run = async () => {
       const result = await appliedJobsCollection.insertOne(jobInfo);
       res.send(result);
     });
+
+    app.post("/bookmark_jobs", async (req, res) => {
+      const jobInfo = req.body;
+
+      const existingBookmark = await bookmarkJobsCollection.findOne({
+        jobId: jobInfo.jobId,
+        candidate_email: jobInfo.candidate_email,
+      });
+      if (existingBookmark) {
+        return res.send({ success: false });
+      }
+
+      const result = await bookmarkJobsCollection.insertOne(jobInfo);
+      res.send({result:result,success:true});
+    });
+
+    app.patch('/user/:email',async(req,res)=>{
+      const user = req.body;
+      const query = {email: req.params.email}
+      const option = {upsert:true}
+      const updatedUser = {
+        $set:{
+          name: user.name,
+          title: user.title,
+          education: user.education,
+          website: user.website,
+          resume: user.resume,
+          photo: user.photo,
+          experience: user.experience
+        }
+      }
+      const result = await usersCollection.findOneAndUpdate(query,updatedUser);
+      res.send({success:true})
+    })
 
     await client.db("admin").command({ ping: 1 });
     console.log(
