@@ -185,7 +185,7 @@ const run = async () => {
     app.get("/logout", (req, res) => {
       res
         .clearCookie("token", {
-          httpOnly: true,
+          httpOnly: false,
           secure: process.env.NODE_ENV === "production",
           sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
           maxAge: 0,
@@ -202,11 +202,11 @@ const run = async () => {
     app.post("/auth", async (req, res) => {
       const user = req.body;
       const token = jwt.sign(user, secret_token, {
-        expiresIn: "1h",
+        expiresIn: "24h",
       });
       res
         .cookie("token", token, {
-          httpOnly: true,
+          httpOnly: false,
           secure: process.env.NODE_ENV === "production",
           sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
         })
@@ -243,24 +243,36 @@ const run = async () => {
       res.send({result:result,success:true});
     });
 
-    app.patch('/user/:email',async(req,res)=>{
+    app.patch('/user/:email', async (req, res) => {
       const user = req.body;
-      const query = {email: req.params.email}
-      const option = {upsert:true}
+      const query = { email: req.params.email };
+    
+      // Construct the update object dynamically based on the fields provided in the request body
       const updatedUser = {
-        $set:{
-          name: user.name,
-          title: user.title,
-          education: user.education,
-          website: user.website,
-          resume: user.resume,
-          photo: user.photo,
-          experience: user.experience
-        }
+        $set: {}
+      };
+    
+      // Iterate over each property in the user object and add it to the $set object
+      for (const key in user) {
+        updatedUser.$set[key] = user[key];
       }
-      const result = await usersCollection.findOneAndUpdate(query,updatedUser);
-      res.send({success:true})
+    
+      try {
+        // Perform the update operation
+        await usersCollection.findOneAndUpdate(query, updatedUser);
+        res.send({ success: true });
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ success: false, message: 'Failed to update user profile.' });
+      }
+    });
+
+    app.delete('/user/:email',async(req,res)=>{
+      const query = {email: req.params.email};
+      const result = await usersCollection.deleteOne(query);
+      res.send({ success: true })
     })
+    
 
     await client.db("admin").command({ ping: 1 });
     console.log(
