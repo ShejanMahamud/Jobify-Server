@@ -185,6 +185,9 @@ const run = async () => {
         if (req.query.id) {
           query = { _id: new ObjectId(req.query.id) };
         }
+        if(req.query.email){
+          query = {email: req.query.email}
+        }
         const result = await companiesCollection
           .find(query)
           .skip(page * size)
@@ -280,17 +283,25 @@ const run = async () => {
     });
 
     //add job to db
-    app.post("/apply", async (req, res) => {
+    app.post("/apply",verifyToken, async (req, res) => {
       try {
         const jobInfo = req.body;
-
+        if(req.user.role === 'company'){
+          return res.send({message: `Company Can't Apply...`})
+        }
         const existingApplication = await appliedJobsCollection.findOne({
           jobId: jobInfo.jobId,
           candidate_email: jobInfo.candidate_email,
         });
         if (existingApplication) {
-          return res.send({ duplicate: true });
+          return res.send({message: `You have already applied...`});
         }
+
+         await appliedJobsCollection.findOneAndUpdate({
+          jobId: jobInfo.jobId,
+        },{
+          $inc: { applications: 1 },
+        });
 
         const result = await appliedJobsCollection.insertOne(jobInfo);
         res.send(result);
@@ -371,6 +382,31 @@ const run = async () => {
       res.send({ success: true })
     });
 
+    //update company info in db
+    app.patch("/company/:email", async (req, res) => {
+      try{
+        const company = req.body;
+      const company_email = req.params.email;
+      const query = { email: company_email };
+      // const data = await companiesCollection.findOne(query)
+      console.log(company_email)
+
+      const updatedCompany = {
+        $set: {},
+      };
+      for (const key in company) {
+        if (company.hasOwnProperty(key)) {
+          updatedCompany.$set[key] = company[key];
+        }
+      }
+      const result = await companiesCollection.findOneAndUpdate(query,updatedCompany)
+        res.send({ success: true })
+      }
+      catch(error){
+        console.log(error)
+      }
+    });
+
     //delete user from db and firebase
     app.delete("/user/:email", async (req, res) => {
       try {
@@ -383,7 +419,7 @@ const run = async () => {
     });
 
     //cron jobs
-cron.schedule('* * * * *', async () => {
+cron.schedule('0 0 * * *', async () => {
   try {
     const currentDate = moment().startOf('day');
     
