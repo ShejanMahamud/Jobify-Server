@@ -79,6 +79,9 @@ const run = async () => {
             _id: { $ne: new ObjectId(req.query.id) },
           };
         }
+        if(req.query.featured){
+          query.featured = req.query.featured.toLowerCase() === 'true';
+        }
         const result = await jobsCollection.find(query).toArray();
         res.send(result);
       } catch (error) {
@@ -187,6 +190,9 @@ const run = async () => {
         }
         if(req.query.email){
           query = {email: req.query.email}
+        }
+        if(req.query.featured){
+         query.featured = req.query.featured.toLowerCase() === 'true';
         }
         const result = await companiesCollection
           .find(query)
@@ -388,8 +394,6 @@ const run = async () => {
         const company = req.body;
       const company_email = req.params.email;
       const query = { email: company_email };
-      // const data = await companiesCollection.findOne(query)
-      console.log(company_email)
 
       const updatedCompany = {
         $set: {},
@@ -417,6 +421,17 @@ const run = async () => {
         res.status(500).send("Server Error");
       }
     });
+
+        //delete company from db and firebase
+        app.delete("/company/:email", async (req, res) => {
+          try {
+            const query = { email: req.params.email };
+            await companiesCollection.deleteOne(query);
+            res.send({ success: true });
+          } catch (error) {
+            res.status(500).send("Server Error");
+          }
+        });
 
     //cron jobs
 cron.schedule('0 0 * * *', async () => {
