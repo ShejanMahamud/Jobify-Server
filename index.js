@@ -64,6 +64,7 @@ const run = async () => {
     const jobsCollection = client.db("jobify").collection("jobs");
     const companiesCollection = client.db("jobify").collection("companies");
     const usersCollection = client.db("jobify").collection("users");
+    const ordersCollection = client.db("jobify").collection("orders");
     const appliedJobsCollection = client.db("jobify").collection("appliedJobs");
     const bookmarkJobsCollection = client
       .db("jobify")
@@ -361,7 +362,7 @@ const data = {
   total_amount: planDetails?.price,
   currency: 'BDT',
   tran_id: tran_id, // use unique tran_id for each api call
-  success_url: 'http://localhost:3030/success',
+  success_url: `${process.env.SERVER_API}/payment/success`,
   fail_url: 'http://localhost:3030/fail',
   cancel_url: 'http://localhost:3030/cancel',
   ipn_url: 'http://localhost:3030/ipn',
@@ -392,8 +393,54 @@ sslcz.init(data).then(apiResponse => {
   // Redirect the user to payment gateway
   let GatewayPageURL = apiResponse.GatewayPageURL
   res.send({url: GatewayPageURL})
-  console.log('Redirecting to: ', GatewayPageURL)
+  const order = {...planDetails,tran_id,status:false,active:false}
+
+const result = ordersCollection.insertOne(order)
 });
+
+app.get('/tran_info', (req, res) => {
+  const data = {
+      tran_id
+  };
+  const sslcz = new SSLCommerzPayment(store_id, store_passwd, is_live)
+  sslcz.transactionQueryByTransactionId(data).then(data => {
+      res.send(data.element)
+  });
+})
+
+app.post('/payment/success',async(req,res)=>{
+  const result = await ordersCollection.updateOne({tran_id},{
+    $set:{
+      status: true,
+      active: true
+    }
+  })
+  await companiesCollection.findOneAndUpdate({email: planDetails?.user_email},{
+    $set:{
+      plan: planDetails?.plan,
+      job_limit: planDetails?.plan === 'basic' && 5 || planDetails?.plan === 'standard' && 10 || planDetails?.plan === 'premium' && 20,
+      resume_access_limit: planDetails?.plan === 'basic' && 10 || planDetails?.plan === 'standard' && 20 || planDetails?.plan === 'premium' && 50,
+      resume_visibility_limit: planDetails?.plan === 'basic' && 10 || planDetails?.plan === 'standard' && 20 || planDetails?.plan === 'premium' && 50,
+    }
+  })
+  if(result.modifiedCount > 0){
+    res.redirect('http://localhost:5173/payment/success')
+  }
+})
+
+    })
+
+    //get order/plan info
+    app.get('/orders',async(req,res)=>{
+      let query = {};
+      if(req.query.active){
+        query = {active: true}
+      }
+      if(req.query.status && req.query.email){
+        query = {user_email:req.params.email,status:true}
+      }
+      const result = await ordersCollection.find(query).toArray()
+      res.send(result)
     })
 
     //update user info
