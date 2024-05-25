@@ -351,6 +351,13 @@ const run = async () => {
         return res.send({ message: "Only Company Can Add Job" });
       }
       const result = await jobsCollection.insertOne(jobInfo);
+      if(result.insertedId){
+        await companiesCollection.findOneAndUpdate({_id: new ObjectId(jobInfo?.companyId)},{
+          $set:{
+             $inc: { job_limit: -1 } 
+          }
+        })
+      }
       res.send(result);
     });
 
