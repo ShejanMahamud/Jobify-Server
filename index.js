@@ -134,6 +134,27 @@ const run = async () => {
       }
     });
 
+    //get all candidates
+    app.get('/candidates',async(req,res)=>{
+      let query = {};
+      if(req.query.id){
+        query = {jobId: req.query.id}
+      }
+      const applications = await appliedJobsCollection.find(query).toArray();
+      const candidate_emails = applications.map(application => application.candidate_email)
+
+      const candidates = await usersCollection.find({email: {$in:candidate_emails}}).toArray()
+      const detailedApplications = applications.map(application => {
+        const candidate = candidates.find(user => user.email === application.candidate_email);
+        const { role, ...candidateWithoutRole } = candidate;
+        return {
+          ...application,
+          ...candidateWithoutRole
+        };
+      });
+      res.send(detailedApplications)
+    })
+
     //get a single company
     app.get("/company/:id", async (req, res) => {
       try {
@@ -309,6 +330,12 @@ const run = async () => {
         if (existingApplication) {
           return res.send({message: `You have already applied...`});
         }
+
+        await jobsCollection.findOneAndUpdate({_id: new ObjectId(jobInfo.jobId)},{
+          $inc:{
+            applications: 1
+          }
+        })
 
          await appliedJobsCollection.findOneAndUpdate({
           jobId: jobInfo.jobId,
