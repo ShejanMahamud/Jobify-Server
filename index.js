@@ -142,14 +142,17 @@ const run = async () => {
       }
       const applications = await appliedJobsCollection.find(query).toArray();
       const candidate_emails = applications.map(application => application.candidate_email)
-
+      const jobDetails = await jobsCollection.findOne({_id: new ObjectId(req.query.id)})
       const candidates = await usersCollection.find({email: {$in:candidate_emails}}).toArray()
       const detailedApplications = applications.map(application => {
         const candidate = candidates.find(user => user.email === application.candidate_email);
         const { role, ...candidateWithoutRole } = candidate;
+        const {company_name,job_title} = jobDetails
         return {
           ...application,
-          ...candidateWithoutRole
+          ...candidateWithoutRole,
+          company_name,
+          job_title
         };
       });
       res.send(detailedApplications)
