@@ -141,18 +141,22 @@ const run = async () => {
         query = {jobId: req.query.id}
       }
       const applications = await appliedJobsCollection.find(query).toArray();
+      if(!req.query.id){
+        return res.send(applications)
+      }
       const candidate_emails = applications.map(application => application.candidate_email)
       const jobDetails = await jobsCollection.findOne({_id: new ObjectId(req.query.id)})
       const candidates = await usersCollection.find({email: {$in:candidate_emails}}).toArray()
       const detailedApplications = applications.map(application => {
         const candidate = candidates.find(user => user.email === application.candidate_email);
-        const { role, ...candidateWithoutRole } = candidate;
-        const {company_name,job_title} = jobDetails
+        const { role,_id, ...candidateWithoutRole } = candidate;
+        const {company_name,job_title,job_nature} = jobDetails
         return {
           ...application,
           ...candidateWithoutRole,
           company_name,
-          job_title
+          job_title,
+          job_nature
         };
       });
       res.send(detailedApplications)
@@ -502,6 +506,23 @@ app.post('/payment/success',async(req,res)=>{
         res.status(500).send("Failed to update user profile.");
       }
     });
+
+        //update applied job status
+        app.patch('/applied_job/:id',async(req,res)=>{
+          const info = req.body;
+          const query = {_id : new ObjectId(req.params.id)}
+          const updateStatus = {
+            $set:{}
+          }
+          for(const key in info){
+            if(info.hasOwnProperty(key)){
+              updateStatus.$set[key] = info[key];
+            }
+          }
+          const result = await appliedJobsCollection.updateOne(query,updateStatus)
+          res.send(result)
+    
+        })
 
     //update job in db
     app.patch("/job/:id", async (req, res) => {
