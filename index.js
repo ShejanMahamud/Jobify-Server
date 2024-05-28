@@ -162,6 +162,14 @@ const run = async () => {
       res.send(detailedApplications)
     })
 
+    //get candidate dashbaord state
+    app.get('/candidate_stats/:email',async(req,res)=>{
+      const query = {candidate_email: req.params.email}
+      const appliedJobs = await appliedJobsCollection.find(query).toArray()
+      const bookmarkJobs = await bookmarkJobsCollection.find(query).toArray()
+      res.send({appliedJobsCount:appliedJobs.length,bookmarkJobsCount:bookmarkJobs.length})
+    })
+
     //get a single company
     app.get("/company/:id", async (req, res) => {
       try {
@@ -239,6 +247,29 @@ const run = async () => {
         res.status(500).send("Server Error");
       }
     });
+
+    //get job alerts
+    app.get('/job_alert', async (req, res) => {
+      let query = {};
+      if (req.query.preference) {
+        const preferences = req.query.preference.split(',');
+        query = { 
+          $or: preferences.map(pref => ({
+            job_title: { $regex: new RegExp(pref, "i") }
+          }))
+        };
+      }
+    
+      try {
+        const result = await jobsCollection.find(query).toArray();
+        res.json(result);
+      } catch (error) {
+        console.error(error);
+        res.status(500).send('An error occurred while fetching job alerts');
+      }
+    });
+    
+    
 
     //company count for pagination
     app.get("/company_search", async (req, res) => {
