@@ -10,6 +10,27 @@ const port = process.env.PORT || 3473;
 const mongoURI = process.env.MONGO_URI;
 const secret_token = process.env.ACCESS_TOKEN_SECRET;
 const SSLCommerzPayment = require('sslcommerz-lts')
+const nodemailer = require("nodemailer");
+
+//transporter
+const sendEmail = async (email,emailData) => {
+  const transporter = nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 587,
+    secure: false,
+    auth: {
+      user: process.env.SMTP_EMAIL,
+      pass: process.env.SMTP_PASS,
+    },
+  });
+   await transporter.sendMail({
+    from: `"Jobify" <${process.env.SMTP_EMAIL}>`,
+    to: email, 
+    subject: emailData.subject,
+    html: emailData.body,
+  });
+
+}
 
 //sslcommerz details
 const store_id = process.env.STORE_ID;
@@ -540,17 +561,16 @@ app.post('/payment/success',async(req,res)=>{
 
         //update applied job status
         app.patch('/applied_job/:id',async(req,res)=>{
-          const info = req.body;
+          const {status,email} = req.body;
           const query = {_id : new ObjectId(req.params.id)}
           const updateStatus = {
-            $set:{}
-          }
-          for(const key in info){
-            if(info.hasOwnProperty(key)){
-              updateStatus.$set[key] = info[key];
-            }
+            $set:{status: status}
           }
           const result = await appliedJobsCollection.updateOne(query,updateStatus)
+          await sendEmail(email,{
+            subject: `Your Job Status Changed!`,
+            body: `Your Applied Jobs Status Changed To ${status} <br> Team Jobify <br> Jobify`
+          })
           res.send(result)
     
         })
