@@ -11,7 +11,7 @@ const mongoURI = process.env.MONGO_URI;
 const secret_token = process.env.ACCESS_TOKEN_SECRET;
 const SSLCommerzPayment = require("sslcommerz-lts");
 const nodemailer = require("nodemailer");
-
+const stripe = require("stripe")(process.env.SK_TEST)
 //transporter
 const sendEmail = async (email, emailData) => {
   const transporter = nodemailer.createTransport({
@@ -91,6 +91,12 @@ const run = async () => {
     app.get("/jobs", async (req, res) => {
       try {
         let query = {};
+        if (req.query.open_jobs) {
+          query = { company_name: req.query.open_jobs };
+        }
+        if (req.query.jobId) {
+          query = { _id: new ObjectId(req.query.jobId) };
+        }
         if (req.query.featured) {
           query.featured = req.query.featured.toLowerCase() === "true";
         }
@@ -468,7 +474,7 @@ const run = async () => {
       res.send(result);
     });
 
-    //purchase plan route
+    //ssl-commerz payment
     app.post("/plans", async (req, res) => {
       const planDetails = req.body;
       const tran_id = new ObjectId().toString();
@@ -557,6 +563,50 @@ const run = async () => {
         }
       });
     });
+
+    //stripe payment
+    app.post("/create-payment-intent", async (req, res) => {
+      const { price } = req.body;
+      const amount = parseInt(price * 100)
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: amount,
+        currency: "usd",
+        payment_method_types: [
+          "card"
+        ],
+      });
+    
+      res.send({
+        clientSecret: paymentIntent.client_secret,
+      });
+    });
+
+    //save stripe payment to db
+    app.post('/plans_stripe',async(req,res)=>{
+      const payment_info = req.body;
+      const result = await ordersCollection.insertOne(payment_info)
+      await companiesCollection.findOneAndUpdate(
+        { email: payment_info?.user_email },
+        {
+          $set: {
+            plan: payment_info?.plan,
+            job_limit:
+              (payment_info?.plan === "basic" && 5) ||
+              (payment_info?.plan === "standard" && 10) ||
+              (payment_info?.plan === "premium" && 20),
+            resume_access_limit:
+              (payment_info?.plan === "basic" && 10) ||
+              (payment_info?.plan === "standard" && 20) ||
+              (payment_info?.plan === "premium" && 50),
+            resume_visibility_limit:
+              (payment_info?.plan === "basic" && 10) ||
+              (payment_info?.plan === "standard" && 20) ||
+              (payment_info?.plan === "premium" && 50),
+          },
+        }
+      );
+      res.send(result)
+    })
 
     //get order/plan info
     app.get("/orders", async (req, res) => {
