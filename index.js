@@ -91,18 +91,6 @@ const run = async () => {
     app.get("/jobs", async (req, res) => {
       try {
         let query = {};
-        if (req.query.open_jobs) {
-          query = { company_name: req.query.open_jobs };
-        }
-        if (req.query.jobId) {
-          query = { _id: new ObjectId(req.query.jobId) };
-        }
-        if (req.query.related && req.query.id) {
-          query = {
-            category: req.query.related,
-            _id: { $ne: new ObjectId(req.query.id) },
-          };
-        }
         if (req.query.featured) {
           query.featured = req.query.featured.toLowerCase() === "true";
         }
@@ -607,11 +595,11 @@ const run = async () => {
     });
 
     //update applied job status
-    app.patch("/applied_job/:id", async (req, res) => {
-      const { status, email } = req.body;
+    app.patch("/change_status/:id", async (req, res) => {
+      const {email,status} = req.body;
       const query = { _id: new ObjectId(req.params.id) };
       const updateStatus = {
-        $set: { status: status },
+        $set: {status:status},
       };
       const result = await appliedJobsCollection.updateOne(query, updateStatus);
       res.send(result);
@@ -620,6 +608,53 @@ const run = async () => {
         body: `<p>Your Applied Jobs Status Changed To <strong>${status}</strong></p><br><p>Team Jobify</p><p>Jobify</p>`,
       });
     });
+
+    app.patch(`/interview/:id`,async(req,res)=>{
+      const interviewInfo = req.body;
+      const query = {_id: new ObjectId(req.params.id)}
+      const updateStatus = {
+        $set:{}
+      }
+      for(const key in interviewInfo){
+        if(interviewInfo.hasOwnProperty){
+          updateStatus.$set[key] = interviewInfo[key]
+        }
+      }
+      const result = await appliedJobsCollection.updateOne(query,updateStatus);
+      if(result.modifiedCount > 0){
+        await sendEmail(interviewInfo.email, {
+          subject: `Your Job Status Changed!`,
+          body: `
+          <div style="font-family: Arial, sans-serif; line-height: 1.6;">
+            <h2 style="color: #4CAF50;">Job Status Update from Jobify</h2>
+            <p>Dear Applicant,</p>
+            <p>We are pleased to inform you that your job application status has changed to <strong>${interviewInfo.status}</strong>.</p>
+            <p>Here are the details of your upcoming interview:</p>
+            <table style="border-collapse: collapse; width: 100%; max-width: 600px;">
+              <tr>
+                <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Interview Date:</td>
+                <td style="padding: 8px; border: 1px solid #ddd;">${interviewInfo.interview_date}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Interview Time:</td>
+                <td style="padding: 8px; border: 1px solid #ddd;">${interviewInfo.interview_time}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Location:</td>
+                <td style="padding: 8px; border: 1px solid #ddd;">${interviewInfo?.interview_location || interviewInfo?.interview_link}</td>
+              </tr>
+            </table>
+            <p>We look forward to meeting you. Please ensure you arrive on time and bring any necessary documents.</p>
+            <br>
+            <p>Best regards,</p>
+            <p><strong>Team Jobify</strong></p>
+            <p style="color: #888;">Jobify</p>
+          </div>
+        `,
+        });
+      }
+      res.send(result)
+    })
 
     //update job in db
     app.patch("/job/:id", async (req, res) => {
