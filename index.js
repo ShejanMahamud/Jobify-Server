@@ -644,7 +644,7 @@ const run = async () => {
       }
     });
 
-    //update applied job status
+    //update applied job statu
     app.patch("/change_status/:id", async (req, res) => {
       const {email,status} = req.body;
       const query = { _id: new ObjectId(req.params.id) };
