@@ -694,7 +694,7 @@ const run = async () => {
                 <td style="padding: 8px; border: 1px solid #ddd;">${interviewInfo?.interview_location || interviewInfo?.interview_link}</td>
               </tr>
             </table>
-            <p>We look forward to meeting you. Please ensure you arrive on time and bring any necessary documents.</p>
+            <p>${interviewInfo.interview_query}</p>
             <br>
             <p>Best regards,</p>
             <p><strong>Team Jobify</strong></p>
