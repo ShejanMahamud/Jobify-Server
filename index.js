@@ -42,7 +42,7 @@ const app = express();
 // Middleware
 app.use(
   cors({
-    origin: ["http://localhost:5173"],
+    origin: ["http://localhost:5173",'https://jobify-web.netlify.app'],
     credentials: true,
   })
 );
@@ -72,11 +72,16 @@ const verifyToken = (req, res, next) => {
     next();
   });
 };
+const cookieOptions = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
+};
 
 // Main function to run MongoDB client and set up routes
 const run = async () => {
   try {
-    await client.connect();
+    // await client.connect();
 
     const jobsCollection = client.db("jobify").collection("jobs");
     const companiesCollection = client.db("jobify").collection("companies");
@@ -107,27 +112,96 @@ const run = async () => {
       }
     });
 
-    //get a single job details
-    app.get('/job_details/:id',async(req,res)=>{
-      const job = await jobsCollection.findOne({_id: new ObjectId(req.params.id)})
-      const company = await companiesCollection.findOne({company_name: job?.company_name})
-      const related_jobs = await jobsCollection.find({
-        job_tags: {$in: job?.job_tags},
-        _id: { $ne: new ObjectId(job?._id) },
-      }).toArray()
-      const {benefits,company_vision,featured,plan,job_limit,resume_access_limit,resume_visibility_limit,company_about,location,description,...companyDetails} = company;
-      const {job_tags,company_email,applications,highlight,...jobDetail} = job
-      const jobDetails = {job: jobDetail,company: companyDetails, related_jobs:related_jobs}
-      res.send(jobDetails)
-    })
+    // //get a single job details
+    // app.get('/job_details/:id',async(req,res)=>{
+    //   const job = await jobsCollection.findOne({_id: new ObjectId(req.params.id)})
+    //   const company = await companiesCollection.findOne({company_name: job?.company_name})
+    //   const related_jobs = await jobsCollection.find({
+    //     job_tags: {$in: job?.job_tags},
+    //     _id: { $ne: new ObjectId(job?._id) },
+    //   }).toArray()
+    //   const {benefits,company_vision,featured,plan,job_limit,resume_access_limit,resume_visibility_limit,company_about,location,description,...companyDetails} = company;
+    //   const {job_tags,company_email,applications,highlight,...jobDetail} = job
+    //   const jobDetails = {job: jobDetail,company: companyDetails, related_jobs:related_jobs}
+    //   res.send(jobDetails)
+    // })
 
-    //get job count for pagination
-    app.get("/jobs_count", async (req, res) => {
+    //job details with a id
+    app.get('/job_details/:id', async (req, res) => {
       try {
-        const result = await jobsCollection.countDocuments();
-        res.send({ jobsCount: result });
+        const pipeline = [
+          {
+            $match: {
+              _id: new ObjectId(req.params.id)
+            }
+          },
+          {
+            $lookup: {
+              from: 'companies',
+              localField: 'company_name',
+              foreignField: 'company_name',
+              as: 'company_info'
+            }
+          },
+          {
+            $unwind: "$company_info"
+          },
+          {
+            $lookup: {
+              from: 'jobs',
+              let: { job_tags: '$job_tags', job_id: '$_id' },
+              pipeline: [
+                {
+                  $match: {
+                    $expr: {
+                      $and: [
+                        { $in: ['$job_tags', '$$job_tags'] },
+                        { $ne: ['$_id', '$$job_id'] }
+                      ]
+                    }
+                  }
+                }
+              ],
+              as: 'related_jobs'
+            }
+          },
+          {
+            $project: {
+              'company_info.benefits': 0,
+              'company_info.company_vision': 0,
+              'company_info.featured': 0,
+              'company_info.plan': 0,
+              'company_info.job_limit': 0,
+              'company_info.resume_access_limit': 0,
+              'company_info.resume_visibility_limit': 0,
+              'company_info.company_about': 0,
+              'company_info.location': 0,
+              'company_info.description': 0,
+              job_tags: 0,
+              company_email: 0,
+              applications: 0,
+              highlight: 0
+            }
+          },
+          {
+            $addFields: {
+              company: "$company_info",
+              related_jobs: "$related_jobs"
+            }
+          }
+        ];
+    
+        const result = await jobsCollection.aggregate(pipeline).toArray();
+    
+        if (result.length === 0) {
+          return res.status(404).send({ error: 'Job not found' });
+        }
+    
+        const jobDetails = result[0];
+    
+        res.send(jobDetails);
       } catch (error) {
-        res.status(500).send("Server Error");
+        res.status(500).send({ error: error.message });
       }
     });
 
@@ -148,12 +222,13 @@ const run = async () => {
           location: { $regex: location || "", $options: "i" },
           job_type: { $regex: type || "", $options: "i" },
         };
+        const count = await jobsCollection.countDocuments()
         const result = await jobsCollection
           .find(query)
           .skip(skip)
           .limit(limit)
           .toArray();
-        res.send(result);
+        res.send({jobs:result,jobsCount:count});
       } catch (error) {
         res.status(500).send("Server Error");
       }
@@ -347,16 +422,14 @@ const run = async () => {
     });
 
     //clearing token
-    app.get("/logout", (req, res) => {
-      res
-        .clearCookie("token", {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === "production",
-          sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
-          maxAge: 0,
-        })
-        .send({ success: true });
-    });
+//clearing Token
+app.post("/logout", async (req, res) => {
+  const user = req.body;
+  console.log("logging out", user);
+  res
+    .clearCookie("token", { ...cookieOptions, maxAge: 0 })
+    .send({ success: true });
+});
 
     //insert user to db
     app.post("/user", async (req, res) => {
@@ -377,11 +450,7 @@ const run = async () => {
           expiresIn: "24h",
         });
         res
-          .cookie("token", token, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
-            sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
-          })
+          .cookie("token", token, cookieOptions)
           .send({ success: true });
       } catch (error) {
         res.status(500).send("Server Error");
@@ -796,10 +865,10 @@ const run = async () => {
       }
     });
 
-    await client.db("admin").command({ ping: 1 });
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
-    );
+    // await client.db("admin").command({ ping: 1 });
+    // console.log(
+    //   "Pinged your deployment. You successfully connected to MongoDB!"
+    // );
   } finally {
   }
 };
