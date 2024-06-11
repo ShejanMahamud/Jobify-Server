@@ -112,20 +112,6 @@ const run = async () => {
       }
     });
 
-    // //get a single job details
-    // app.get('/job_details/:id',async(req,res)=>{
-    //   const job = await jobsCollection.findOne({_id: new ObjectId(req.params.id)})
-    //   const company = await companiesCollection.findOne({company_name: job?.company_name})
-    //   const related_jobs = await jobsCollection.find({
-    //     job_tags: {$in: job?.job_tags},
-    //     _id: { $ne: new ObjectId(job?._id) },
-    //   }).toArray()
-    //   const {benefits,company_vision,featured,plan,job_limit,resume_access_limit,resume_visibility_limit,company_about,location,description,...companyDetails} = company;
-    //   const {job_tags,company_email,applications,highlight,...jobDetail} = job
-    //   const jobDetails = {job: jobDetail,company: companyDetails, related_jobs:related_jobs}
-    //   res.send(jobDetails)
-    // })
-
     //job details with a id
     app.get('/job_details/:id', async (req, res) => {
       try {
@@ -236,41 +222,67 @@ const run = async () => {
 
     //get all candidates
     app.get("/candidates", async (req, res) => {
-      let query = {};
-      if (req.query.id) {
-        query = { jobId: req.query.id };
+      const query = req.query.id ? { jobId: req.query.id } : {};
+    
+      const pipeline = [
+        {
+          $match: query
+        },
+        {
+          $lookup: {
+            from: "jobsCollection",
+            localField: "jobId",
+            foreignField: "_id",
+            as: "jobDetails"
+          }
+        },
+        {
+          $unwind: {
+            path: "$jobDetails",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $lookup: {
+            from: "usersCollection",
+            localField: "candidate_email",
+            foreignField: "email",
+            as: "candidateDetails"
+          }
+        },
+        {
+          $unwind: {
+            path: "$candidateDetails",
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $addFields: {
+            company_name: "$jobDetails.company_name",
+            job_title: "$jobDetails.job_title",
+            job_nature: "$jobDetails.job_nature",
+            candidate_name: "$candidateDetails.name",
+            candidate_email: "$candidateDetails.email",
+            candidate_phone: "$candidateDetails.phone"
+          }
+        },
+        {
+          $project: {
+            jobDetails: 0,
+            candidateDetails: 0
+          }
+        }
+      ];
+    
+      try {
+        const applications = await appliedJobsCollection.aggregate(pipeline).toArray();
+        res.send(applications);
+      } catch (error) {
+        res.status(500).send({ error: error.message });
       }
-      const applications = await appliedJobsCollection.find(query).toArray();
-      if (!req.query.id) {
-        return res.send(applications);
-      }
-      const candidate_emails = applications.map(
-        (application) => application.candidate_email
-      );
-      const jobDetails = await jobsCollection.findOne({
-        _id: new ObjectId(req.query.id),
-      });
-      const candidates = await usersCollection
-        .find({ email: { $in: candidate_emails } })
-        .toArray();
-      const detailedApplications = applications.map((application) => {
-        const candidate = candidates.find(
-          (user) => user.email === application.candidate_email
-        );
-        const { role, _id, ...candidateWithoutRole } = candidate;
-        const { company_name, job_title, job_nature } = jobDetails;
-        return {
-          ...application,
-          ...candidateWithoutRole,
-          company_name,
-          job_title,
-          job_nature,
-        };
-      });
-      res.send(detailedApplications);
     });
-
-    //get candidate dashbaord state
+    
+    //get candidate dashboard state
     app.get("/candidate_stats/:email", async (req, res) => {
       const query = { candidate_email: req.params.email };
       const appliedJobs = await appliedJobsCollection.find(query).toArray();
@@ -393,20 +405,9 @@ const run = async () => {
     //user data based by email [need to fix role]
     app.get("/user/:email", verifyToken, async (req, res) => {
       try {
-        const tokenEmail = req.user?.email;
         const email = req.params.email;
-
-        if (tokenEmail && tokenEmail !== email) {
-          console.log("Email mismatch. Forbidden Access!");
-          return res.status(403).send({ message: "Forbidden Access!" });
-        }
-
         const query = { email: email };
         const result = await usersCollection.findOne(query);
-        if (!result) {
-          return res.status(404).send({ message: "User not found" });
-        }
-
         res.send(result);
       } catch (error) {
         console.error("Server Error:", error);
@@ -421,7 +422,6 @@ const run = async () => {
       res.send({ role: result?.role });
     });
 
-    //clearing token
 //clearing Token
 app.post("/logout", async (req, res) => {
   const user = req.body;
