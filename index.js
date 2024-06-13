@@ -524,11 +524,7 @@ app.post("/logout", async (req, res) => {
 
     //create a job to db and ui
     app.post("/jobs", verifyToken, async (req, res) => {
-      const role = req.user.role;
       const jobInfo = req.body;
-      if (role !== "company") {
-        return res.send({ message: "Only Company Can Add Job" });
-      }
       const result = await jobsCollection.insertOne(jobInfo);
       if (result.insertedId) {
         await companiesCollection.findOneAndUpdate(
