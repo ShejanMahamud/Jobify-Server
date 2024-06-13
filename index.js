@@ -11,7 +11,7 @@ const mongoURI = process.env.MONGO_URI;
 const secret_token = process.env.ACCESS_TOKEN_SECRET;
 const SSLCommerzPayment = require("sslcommerz-lts");
 const nodemailer = require("nodemailer");
-const stripe = require("stripe")(process.env.SK_TEST)
+const stripe = require("stripe")(process.env.SK_TEST);
 //transporter
 const sendEmail = async (email, emailData) => {
   const transporter = nodemailer.createTransport({
@@ -42,7 +42,7 @@ const app = express();
 // Middleware
 app.use(
   cors({
-    origin: ["http://localhost:5173",'https://jobify-web.netlify.app'],
+    origin: ["http://localhost:5173", "https://jobify-web.netlify.app"],
     credentials: true,
   })
 );
@@ -94,97 +94,150 @@ const run = async () => {
 
     //get all jobs
     app.get("/jobs", async (req, res) => {
+      const page = parseInt(req?.query?.page) || 1;
+      const limit = parseInt(req?.query?.limit) || 10;
+      const skip = (page - 1) * limit;
       try {
         let query = {};
-        if (req.query.open_jobs) {
-          query = { company_name: req.query.open_jobs };
-        }
         if (req.query.jobId) {
-          query = { _id: new ObjectId(req.query.jobId) };
+          query._id = new ObjectId(req.query.jobId);
         }
         if (req.query.featured) {
           query.featured = req.query.featured.toLowerCase() === "true";
         }
-        const result = await jobsCollection.find(query).toArray();
-        res.send(result);
+        if (req.query.company) {
+          query.company = { company_name: req.query.company };
+        }
+
+        const pipeline = [
+          { $match: query },
+          {
+            $lookup: {
+              from: "companies",
+              localField: "company_name",
+              foreignField: "company_name",
+              as: "company_info",
+            },
+          },
+          { $unwind: "$company_info" },
+          {
+            $project: {
+              _id: 1,
+              company_name: 1,
+              job_title: 1,
+              job_tags: 1,
+              job_role: 1,
+              job_salary_min: 1,
+              job_salary_max: 1,
+              job_salary_type: 1,
+              education: 1,
+              experience: 1,
+              job_type: 1,
+              vacancies: 1,
+              expiration_date: 1,
+              job_level: 1,
+              location: 1,
+              posted_date: 1,
+              category: 1,
+              status: 1,
+              featured: 1,
+              company_logo: "$company_info.company_logo",
+            },
+          },
+        ];
+        const count = await jobsCollection.countDocuments();
+        const result = await jobsCollection
+          .aggregate(pipeline)
+          .skip(skip)
+          .limit(limit)
+          .toArray();
+        res.send({ jobs: result, jobsCount: count });
       } catch (error) {
         res.status(500).send("Server Error");
       }
     });
 
+    //get all open jobs
+    app.get("/open_jobs/:name", async (req, res) => {
+      const result = await jobsCollection
+        .find({ company_name: req.params.name })
+        .toArray();
+      res.send(result);
+    });
+
     //job details with a id
-    app.get('/job_details/:id', async (req, res) => {
+    app.get("/job_details/:id", async (req, res) => {
       try {
         const pipeline = [
           {
             $match: {
-              _id: new ObjectId(req.params.id)
-            }
+              _id: new ObjectId(req.params.id),
+            },
           },
           {
             $lookup: {
-              from: 'companies',
-              localField: 'company_name',
-              foreignField: 'company_name',
-              as: 'company_info'
-            }
+              from: "companies",
+              localField: "company_name",
+              foreignField: "company_name",
+              as: "company_info",
+            },
           },
           {
-            $unwind: "$company_info"
+            $unwind: "$company_info",
           },
           {
             $lookup: {
-              from: 'jobs',
-              let: { job_tags: '$job_tags', job_id: '$_id' },
+              from: "jobs",
+              let: { job_tags: "$job_tags", job_id: "$_id" },
               pipeline: [
                 {
                   $match: {
                     $expr: {
                       $and: [
-                        { $in: ['$job_tags', '$$job_tags'] },
-                        { $ne: ['$_id', '$$job_id'] }
-                      ]
-                    }
-                  }
-                }
+                        { $in: ["$job_tags", "$$job_tags"] },
+                        { $ne: ["$_id", "$$job_id"] },
+                      ],
+                    },
+                  },
+                },
               ],
-              as: 'related_jobs'
-            }
+              as: "related_jobs",
+            },
           },
           {
             $project: {
-              'company_info.benefits': 0,
-              'company_info.company_vision': 0,
-              'company_info.featured': 0,
-              'company_info.plan': 0,
-              'company_info.job_limit': 0,
-              'company_info.resume_access_limit': 0,
-              'company_info.resume_visibility_limit': 0,
-              'company_info.company_about': 0,
-              'company_info.location': 0,
-              'company_info.description': 0,
+              "company_info.benefits": 0,
+              "company_info.company_vision": 0,
+              "company_info.featured": 0,
+              "company_info.plan": 0,
+              "company_info.job_limit": 0,
+              "company_info.resume_access_limit": 0,
+              "company_info.resume_visibility_limit": 0,
+              "company_info.company_about": 0,
+              "company_info.location": 0,
+              "company_info.description": 0,
               job_tags: 0,
               company_email: 0,
               applications: 0,
-              highlight: 0
-            }
+              highlight: 0,
+            },
           },
           {
             $addFields: {
               company: "$company_info",
-              related_jobs: "$related_jobs"
-            }
-          }
+              related_jobs: "$related_jobs",
+            },
+          },
         ];
-    
+
         const result = await jobsCollection.aggregate(pipeline).toArray();
-    
+
         if (result.length === 0) {
-          return res.status(404).send({ error: 'Job not found' });
+          return res.status(404).send({ error: "Job not found" });
         }
-    
+
         const jobDetails = result[0];
-    
+
         res.send(jobDetails);
       } catch (error) {
         res.status(500).send({ error: error.message });
@@ -208,13 +261,13 @@ const run = async () => {
           location: { $regex: location || "", $options: "i" },
           job_type: { $regex: type || "", $options: "i" },
         };
-        const count = await jobsCollection.countDocuments()
+        const count = await jobsCollection.countDocuments();
         const result = await jobsCollection
           .find(query)
           .skip(skip)
           .limit(limit)
           .toArray();
-        res.send({jobs:result,jobsCount:count});
+        res.send({ jobs: result, jobsCount: count });
       } catch (error) {
         res.status(500).send("Server Error");
       }
@@ -223,38 +276,38 @@ const run = async () => {
     //get all candidates
     app.get("/candidates", async (req, res) => {
       const query = req.query.id ? { jobId: req.query.id } : {};
-    
+
       const pipeline = [
         {
-          $match: query
+          $match: query,
         },
         {
           $lookup: {
             from: "jobsCollection",
             localField: "jobId",
             foreignField: "_id",
-            as: "jobDetails"
-          }
+            as: "jobDetails",
+          },
         },
         {
           $unwind: {
             path: "$jobDetails",
-            preserveNullAndEmptyArrays: true
-          }
+            preserveNullAndEmptyArrays: true,
+          },
         },
         {
           $lookup: {
             from: "usersCollection",
             localField: "candidate_email",
             foreignField: "email",
-            as: "candidateDetails"
-          }
+            as: "candidateDetails",
+          },
         },
         {
           $unwind: {
             path: "$candidateDetails",
-            preserveNullAndEmptyArrays: true
-          }
+            preserveNullAndEmptyArrays: true,
+          },
         },
         {
           $addFields: {
@@ -263,25 +316,27 @@ const run = async () => {
             job_nature: "$jobDetails.job_nature",
             candidate_name: "$candidateDetails.name",
             candidate_email: "$candidateDetails.email",
-            candidate_phone: "$candidateDetails.phone"
-          }
+            candidate_phone: "$candidateDetails.phone",
+          },
         },
         {
           $project: {
             jobDetails: 0,
-            candidateDetails: 0
-          }
-        }
+            candidateDetails: 0,
+          },
+        },
       ];
-    
+
       try {
-        const applications = await appliedJobsCollection.aggregate(pipeline).toArray();
+        const applications = await appliedJobsCollection
+          .aggregate(pipeline)
+          .toArray();
         res.send(applications);
       } catch (error) {
         res.status(500).send({ error: error.message });
       }
     });
-    
+
     //get candidate dashboard state
     app.get("/candidate_stats/:email", async (req, res) => {
       const query = { candidate_email: req.params.email };
@@ -298,7 +353,48 @@ const run = async () => {
       try {
         const id = req.params.id;
         const query = { _id: new ObjectId(id) };
-        const result = await companiesCollection.findOne(query);
+        const pipeline = [
+          {
+            $match: query,
+          },
+          {
+            $lookup: {
+              from: "jobs", // The collection to join
+              localField: "company_name", // Field from the companies collection
+              foreignField: "company_name", // Field from the jobs collection
+              as: "open_jobs", // The name of the new array field to add to the output documents
+            },
+          },
+          {
+            $project: {
+              company_name: 1,
+              description: 1,
+              founded_in: 1,
+              organization_type: 1,
+              company_size: 1,
+              phone: 1,
+              email: 1,
+              website: 1,
+              company_logo: 1,
+              company_category: 1,
+              benefits: 1,
+              company_vision: 1,
+              location: 1,
+              open_jobs: {
+                job_title:1,
+                company_name:1,
+                location:1,
+                job_salary_min:1,
+                job_salary_max:1,
+                _id:1,
+                job_type:1,
+                featured:1,
+                company_logo:1,
+              },
+            },
+          },
+        ];
+        const result = await companiesCollection.aggregate(pipeline).toArray();
         res.send(result);
       } catch (error) {
         res.status(500).send("Server Error");
@@ -358,14 +454,47 @@ const run = async () => {
           query = { email: req.query.email };
         }
         if (req.query.featured) {
-          query.featured = req.query.featured.toLowerCase() === "true";
+          query.featured = {featured: true}
         }
-        const result = await companiesCollection
-          .find(query)
-          .skip(page * size)
-          .limit(size)
-          .toArray();
-        res.send(result);
+
+        const pipeline = [
+          {
+            $match: query,
+          },
+          {
+            $lookup: {
+              from: "jobs",
+              localField: "company_name",
+              foreignField: "company_name",
+              as: "jobs",
+            },
+          },
+          {
+            $project: {
+              company_name: 1,
+              description: 1,
+              founded_in: 1,
+              organization_type: 1,
+              company_size: 1,
+              phone: 1,
+              email: 1,
+              website: 1,
+              company_logo: 1,
+              company_category: 1,
+              benefits: 1,
+              company_vision: 1,
+              location: 1,
+              open_jobs: { $size: "$jobs" },
+            },
+          },
+          { $skip: page * size },
+          {
+            $limit: size,
+          },
+        ];
+        const count = await companiesCollection.countDocuments();
+        const result = await companiesCollection.aggregate(pipeline).toArray();
+        res.send({ companies: result, count: count });
       } catch (error) {
         res.status(500).send("Server Error");
       }
@@ -422,14 +551,14 @@ const run = async () => {
       res.send({ role: result?.role });
     });
 
-//clearing Token
-app.post("/logout", async (req, res) => {
-  const user = req.body;
-  console.log("logging out", user);
-  res
-    .clearCookie("token", { ...cookieOptions, maxAge: 0 })
-    .send({ success: true });
-});
+    //clearing Token
+    app.post("/logout", async (req, res) => {
+      const user = req.body;
+      console.log("logging out", user);
+      res
+        .clearCookie("token", { ...cookieOptions, maxAge: 0 })
+        .send({ success: true });
+    });
 
     //insert user to db
     app.post("/user", async (req, res) => {
@@ -449,9 +578,7 @@ app.post("/logout", async (req, res) => {
         const token = jwt.sign(user, secret_token, {
           expiresIn: "24h",
         });
-        res
-          .cookie("token", token, cookieOptions)
-          .send({ success: true });
+        res.cookie("token", token, cookieOptions).send({ success: true });
       } catch (error) {
         res.status(500).send("Server Error");
       }
@@ -461,40 +588,40 @@ app.post("/logout", async (req, res) => {
     app.post("/apply", verifyToken, async (req, res) => {
       try {
         const jobInfo = req.body;
-    
+
         if (req.user.role === "company") {
           return res.send({ message: "Company Can't Apply..." });
         }
-    
+
         const existingApplication = await appliedJobsCollection.findOne({
           jobId: jobInfo.jobId,
           candidate_email: jobInfo.candidate_email,
         });
-    
+
         if (existingApplication) {
           return res.send({ message: "You have already applied..." });
         }
-    
+
         await jobsCollection.updateOne(
           { _id: new ObjectId(jobInfo.jobId) },
           { $inc: { applications: 1 } }
         );
-    
+
         const job = await jobsCollection
           .find({ _id: new ObjectId(jobInfo.jobId) })
           .project({ _id: 0, job_title: 1, company_name: 1 })
           .limit(1)
           .toArray();
-        
+
         const jobDetails = job[0];
-    
+
         const result = await appliedJobsCollection.insertOne(jobInfo);
-    
+
         await sendEmail(jobInfo.candidate_email, {
           subject: `You Applied On Jobify`,
-          body: `<p>You applied on <strong>${jobDetails.job_title}</strong></p><br><p>Wait until ${jobDetails.company_name} reviews your application</p><br><p>Jobify Team</p>`
+          body: `<p>You applied on <strong>${jobDetails.job_title}</strong></p><br><p>Wait until ${jobDetails.company_name} reviews your application</p><br><p>Jobify Team</p>`,
         });
-    
+
         res.send(result);
       } catch (error) {
         console.error("Error in /apply route:", error);
@@ -632,24 +759,22 @@ app.post("/logout", async (req, res) => {
     //stripe payment
     app.post("/create-payment-intent", async (req, res) => {
       const { price } = req.body;
-      const amount = parseInt(price * 100)
+      const amount = parseInt(price * 100);
       const paymentIntent = await stripe.paymentIntents.create({
         amount: amount,
         currency: "usd",
-        payment_method_types: [
-          "card"
-        ],
+        payment_method_types: ["card"],
       });
-    
+
       res.send({
         clientSecret: paymentIntent.client_secret,
       });
     });
 
     //save stripe payment to db
-    app.post('/plans_stripe',async(req,res)=>{
+    app.post("/plans_stripe", async (req, res) => {
       const payment_info = req.body;
-      const result = await ordersCollection.insertOne(payment_info)
+      const result = await ordersCollection.insertOne(payment_info);
       await companiesCollection.findOneAndUpdate(
         { email: payment_info?.user_email },
         {
@@ -670,8 +795,8 @@ app.post("/logout", async (req, res) => {
           },
         }
       );
-      res.send(result)
-    })
+      res.send(result);
+    });
 
     //get order/plan info
     app.get("/orders", async (req, res) => {
@@ -711,10 +836,10 @@ app.post("/logout", async (req, res) => {
 
     //update applied job statu
     app.patch("/change_status/:id", async (req, res) => {
-      const {email,status} = req.body;
+      const { email, status } = req.body;
       const query = { _id: new ObjectId(req.params.id) };
       const updateStatus = {
-        $set: {status:status},
+        $set: { status: status },
       };
       const result = await appliedJobsCollection.updateOne(query, updateStatus);
       res.send(result);
@@ -724,39 +849,48 @@ app.post("/logout", async (req, res) => {
       });
     });
 
-    app.patch(`/interview/:id`,async(req,res)=>{
+    app.patch(`/interview/:id`, async (req, res) => {
       const interviewInfo = req.body;
-      const query = {_id: new ObjectId(req.params.id)}
+      const query = { _id: new ObjectId(req.params.id) };
       const updateStatus = {
-        $set:{}
-      }
-      for(const key in interviewInfo){
-        if(interviewInfo.hasOwnProperty){
-          updateStatus.$set[key] = interviewInfo[key]
+        $set: {},
+      };
+      for (const key in interviewInfo) {
+        if (interviewInfo.hasOwnProperty) {
+          updateStatus.$set[key] = interviewInfo[key];
         }
       }
-      const result = await appliedJobsCollection.updateOne(query,updateStatus);
-      if(result.modifiedCount > 0){
+      const result = await appliedJobsCollection.updateOne(query, updateStatus);
+      if (result.modifiedCount > 0) {
         await sendEmail(interviewInfo.email, {
           subject: `Your Job Status Changed!`,
           body: `
           <div style="font-family: Arial, sans-serif; line-height: 1.6;">
             <h2 style="color: #4CAF50;">Job Status Update from Jobify</h2>
             <p>Dear Applicant,</p>
-            <p>We are pleased to inform you that your job application status has changed to <strong>${interviewInfo.status}</strong>.</p>
+            <p>We are pleased to inform you that your job application status has changed to <strong>${
+              interviewInfo.status
+            }</strong>.</p>
             <p>Here are the details of your upcoming interview:</p>
             <table style="border-collapse: collapse; width: 100%; max-width: 600px;">
               <tr>
                 <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Interview Date:</td>
-                <td style="padding: 8px; border: 1px solid #ddd;">${interviewInfo.interview_date}</td>
+                <td style="padding: 8px; border: 1px solid #ddd;">${
+                  interviewInfo.interview_date
+                }</td>
               </tr>
               <tr>
                 <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Interview Time:</td>
-                <td style="padding: 8px; border: 1px solid #ddd;">${interviewInfo.interview_time}</td>
+                <td style="padding: 8px; border: 1px solid #ddd;">${
+                  interviewInfo.interview_time
+                }</td>
               </tr>
               <tr>
                 <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Location:</td>
-                <td style="padding: 8px; border: 1px solid #ddd;">${interviewInfo?.interview_location || interviewInfo?.interview_link}</td>
+                <td style="padding: 8px; border: 1px solid #ddd;">${
+                  interviewInfo?.interview_location ||
+                  interviewInfo?.interview_link
+                }</td>
               </tr>
             </table>
             <p>${interviewInfo.interview_query}</p>
@@ -768,8 +902,8 @@ app.post("/logout", async (req, res) => {
         `,
         });
       }
-      res.send(result)
-    })
+      res.send(result);
+    });
 
     //update job in db
     app.patch("/job/:id", async (req, res) => {
