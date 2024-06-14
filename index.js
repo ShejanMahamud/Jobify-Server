@@ -228,6 +228,11 @@ const run = async () => {
               related_jobs: "$related_jobs",
             },
           },
+          {
+            $project: {
+              company_info: 0
+            }
+          }
         ];
 
         const result = await jobsCollection.aggregate(pipeline).toArray();
