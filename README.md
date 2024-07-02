@@ -2,6 +2,8 @@
 
 <p>Jobify is a comprehensive job portal web app developed using the MERN stack. It provides a seamless platform where candidates can apply for jobs, and companies can explore candidates for their posted jobs and manage the status of applications. Additionally, companies can subscribe to a Premium Plan via SSL COMMERZ and Stripe.</p>
 
+Explore client-side repo for more better informations: [Click Here](https://github.com/ShejanMahamud/Jobify-Client)
+
 ![HTML](https://img.shields.io/badge/HTML5-E34F26?style=for-the-badge&logo=html5&logoColor=white)
 ![CSS3](https://img.shields.io/badge/CSS3-1572B6?style=for-the-badge&logo=css3&logoColor=white)
 ![TAILWIND CSS](https://img.shields.io/badge/TAILWINDCSS-37B6F1?style=for-the-badge&logo=tailwindcss&logoColor=white)
