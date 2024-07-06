@@ -88,6 +88,7 @@ const run = async () => {
     const usersCollection = client.db("jobify").collection("users");
     const ordersCollection = client.db("jobify").collection("orders");
     const appliedJobsCollection = client.db("jobify").collection("appliedJobs");
+    const candidatesCollection = client.db("jobify").collection('candidates')
     const bookmarkJobsCollection = client
       .db("jobify")
       .collection("bookmarkJobs");
@@ -158,9 +159,9 @@ const run = async () => {
     });
 
     //get all open jobs
-    app.get("/open_jobs/:name", async (req, res) => {
+    app.get("/open_jobs/:email", async (req, res) => {
       const result = await jobsCollection
-        .find({ company_name: req.params.name })
+        .find({ company_email: req.params.email })
         .toArray();
       res.send(result);
     });
@@ -342,17 +343,6 @@ const run = async () => {
       }
     });
 
-    //get candidate dashboard state
-    app.get("/candidate_stats/:email", async (req, res) => {
-      const query = { candidate_email: req.params.email };
-      const appliedJobs = await appliedJobsCollection.find(query).toArray();
-      const bookmarkJobs = await bookmarkJobsCollection.find(query).toArray();
-      res.send({
-        appliedJobsCount: appliedJobs.length,
-        bookmarkJobsCount: bookmarkJobs.length,
-      });
-    });
-
     //get a single company
     app.get("/company/:id", async (req, res) => {
       try {
@@ -385,6 +375,8 @@ const run = async () => {
               benefits: 1,
               company_vision: 1,
               location: 1,
+              linkedin:1,
+              github: 1,
               open_jobs: {
                 job_title:1,
                 company_name:1,
@@ -555,6 +547,28 @@ const run = async () => {
       const result = await usersCollection.findOne({ email: email });
       res.send({ role: result?.role });
     });
+
+    //candidate stats for candidate db
+    app.get('/candidate_stats/:email',async(req,res)=>{
+      const applied_jobs = await appliedJobsCollection.countDocuments({candidate_email:req.params.email})
+      const bookmark_jobs = await bookmarkJobsCollection.countDocuments({candidate_email:req.params.email})
+      res.send({applied_jobs,bookmark_jobs})
+    })
+
+    //get candidates details for candidate db
+    app.get('/candidate/:email',async(req,res)=>{
+      const result = await candidatesCollection.findOne({candidate_email:req.params.email})
+      res.status(200).send(result)
+    })
+
+    //saved a candidate info
+    app.post('/candidates',async(req,res)=>{
+      const candidate = req.body;
+      const result = await candidatesCollection.insertOne(candidate)
+      if(result.insertedId){
+        res.send({success:true})
+      }
+    })
 
     //clearing Token
     app.post("/logout", async (req, res) => {
@@ -816,28 +830,31 @@ const run = async () => {
       res.send(result);
     });
 
-    //update user info
-    app.patch("/user/:email", async (req, res) => {
+    //update candidate info
+    app.patch("/candidate/:email", async (req, res) => {
       try {
         const user = req.body;
-        const query = { email: req.params.email };
+        const query = { candidate_email: req.params.email };
 
         const updatedUser = {
-          $set: {},
+          $set: user,
         };
 
-        for (const key in user) {
-          if (user.hasOwnProperty(key)) {
-            updatedUser.$set[key] = user[key];
-          }
-        }
-
-        await usersCollection.findOneAndUpdate(query, updatedUser);
+        await candidatesCollection.findOneAndUpdate(query, updatedUser);
         res.send({ success: true });
       } catch (error) {
         res.status(500).send("Failed to update user profile.");
       }
     });
+
+    app.patch('/user/:email',async(req,res)=>{
+      const result = await usersCollection.updateOne({email: req.params.email},{
+        $set: req.body
+      })
+      if(result.modifiedCount > 0){
+        res.send({success: true})
+      }
+    })
 
     //update applied job statu
     app.patch("/change_status/:id", async (req, res) => {
@@ -933,16 +950,11 @@ const run = async () => {
       try {
         const company = req.body;
         const company_email = req.params.email;
-        const query = { email: company_email };
+        const query = { company_email: company_email };
 
         const updatedCompany = {
-          $set: {},
+          $set: company,
         };
-        for (const key in company) {
-          if (company.hasOwnProperty(key)) {
-            updatedCompany.$set[key] = company[key];
-          }
-        }
         const result = await companiesCollection.findOneAndUpdate(
           query,
           updatedCompany
